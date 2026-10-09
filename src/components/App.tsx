@@ -10,7 +10,7 @@ import {
 import { Result, Idea } from '@/lib/types';
 import { runRules } from '@/lib/rules';
 import { runAI, aiErrorText } from '@/lib/ai';
-import { buildPromptRules, buildPromptAI } from '@/lib/prompt';
+import { makePromptText, PromptKind, KIND_FILE } from '@/lib/prompt';
 import { Built, reportMD } from '@/lib/report';
 import { copy, download, savePDF } from '@/lib/export';
 
@@ -117,13 +117,13 @@ export default function App() {
   };
 
   /* prompts */
-  const makePrompt = async (idea: Idea, mode: 'rules' | 'ai') => {
+  const makePrompt = async (idea: Idea, mode: 'rules' | 'ai', kind: PromptKind) => {
     if (!result) return;
-    const keyB = `${idea.id}:${mode}`;
+    const keyB = `${idea.id}:${mode}:${kind}`;
     setBusy(keyB);
     try {
-      const text = mode === 'rules' ? buildPromptRules(ans, idea, result) : await buildPromptAI(ans, idea, apiKey.trim(), result);
-      setPrompts((p) => [...p.filter((b) => !(b.ideaId === idea.id && b.mode === mode)), { ideaId: idea.id, mode, text }]);
+      const text = await makePromptText(kind, mode, ans, idea, apiKey.trim(), result);
+      setPrompts((p) => [...p.filter((b) => !(b.ideaId === idea.id && b.mode === mode && (b.kind || 'build') === kind)), { ideaId: idea.id, mode, kind, text }]);
     } catch (e) { say(aiErrorText(e)); }
     setBusy(null);
   };
@@ -311,7 +311,7 @@ export default function App() {
           <Results r={result} prompts={prompts} busy={busy} aiReady={aiReady}
             onPrompt={makePrompt}
             onCopyPrompt={(b) => doCopy(b.text, 'Prompt')}
-            onDownloadPrompt={(b, i) => download(`build-prompt-${slug(i.title)}.md`, b.text)}
+            onDownloadPrompt={(b, i) => download(`${KIND_FILE[b.kind || 'build']}-${slug(i.title)}.md`, b.text)}
             onCopyMD={() => doCopy(md(), 'Markdown')}
             onDownloadMD={() => download('mindmap-report.md', md())}
             onDownloadPDF={() => savePDF(md(), 'mindmap-report.pdf')}

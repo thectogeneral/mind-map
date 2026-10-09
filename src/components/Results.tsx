@@ -3,13 +3,14 @@ import { useState } from 'react';
 import { ArrowRight, Copy, Download, FileText, Sparkles, Wand2, FileDown, RotateCcw, Pencil, Check } from 'lucide-react';
 import { Result, CRITERIA, ranked, sentence, Idea } from '@/lib/types';
 import { Built } from '@/lib/report';
+import { PromptKind, KIND_LABEL, KIND_HELP } from '@/lib/prompt';
 
 interface Props {
   r: Result;
   prompts: Built[];
   busy: string | null;
   aiReady: boolean;
-  onPrompt: (idea: Idea, mode: 'rules' | 'ai') => void;
+  onPrompt: (idea: Idea, mode: 'rules' | 'ai', kind: PromptKind) => void;
   onCopyPrompt: (b: Built) => void;
   onDownloadPrompt: (b: Built, idea: Idea) => void;
   onCopyMD: () => void;
@@ -37,6 +38,7 @@ export default function Results(p: Props) {
   const list = ranked(r);
   const [open, setOpen] = useState<string | null>(list[0]?.idea.id || null);
   const [pm, setPm] = useState<Record<string, 'rules' | 'ai'>>({});
+  const [pk, setPk] = useState<Record<string, PromptKind>>({});
   return (
     <div>
       <section className="bg-primary text-primary-foreground border border-foreground rounded-sm p-6 md:p-10 relative overflow-hidden shadow-[6px_6px_0_hsl(var(--accent))]">
@@ -65,8 +67,9 @@ export default function Results(p: Props) {
           const d = r.details.find((x) => x.id === idea.id);
           const isOpen = open === idea.id;
           const mode = pm[idea.id] || 'rules';
-          const built = p.prompts.find((b) => b.ideaId === idea.id && b.mode === mode);
-          const busyKey = `${idea.id}:${mode}`;
+          const kind = pk[idea.id] || 'build';
+          const built = p.prompts.find((b) => b.ideaId === idea.id && b.mode === mode && (b.kind || 'build') === kind);
+          const busyKey = `${idea.id}:${mode}:${kind}`;
           return (
             <li key={idea.id} className={`border border-foreground rounded-sm bg-card ${n === 0 ? 'shadow-[var(--shadow-brutal)]' : ''}`}>
               <div className="p-5 md:p-7">
@@ -93,7 +96,7 @@ export default function Results(p: Props) {
                 <div className="mt-5"><Meter c={score.c} /><p className="mt-2 text-xs text-muted-foreground">Weakest point: {score.note}</p></div>
 
                 <div className="mt-5 flex flex-wrap gap-3">
-                  <button className="btn-brutal" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : idea.id)}><Sparkles className="h-4 w-4" />{isOpen ? 'Hide build prompt' : 'Build prompt'}<ArrowRight className="h-4 w-4" /></button>
+                  <button className="btn-brutal" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : idea.id)}><Sparkles className="h-4 w-4" />{isOpen ? 'Hide prompts' : 'Prompts'}<ArrowRight className="h-4 w-4" /></button>
                 </div>
               </div>
 
@@ -117,8 +120,16 @@ export default function Results(p: Props) {
 
               {isOpen && (
                 <div className="border-t border-foreground bg-amber-soft p-5 md:p-7">
-                  <div className="eyebrow mb-2">§ Build prompt</div>
-                  <p className="text-sm mb-4 max-w-2xl">A prompt for a coding agent, built from this idea and all your answers. The template fills in your answers instantly. The AI version writes a sharper one tailored to the idea.</p>
+                  <div className="eyebrow mb-2">§ Prompts</div>
+                  <div className="flex flex-wrap gap-2 mb-4" role="group" aria-label="Prompt type">
+                    {(['build', 'brief', 'design'] as const).map((k) => (
+                      <button key={k} type="button" aria-pressed={kind === k} onClick={() => setPk({ ...pk, [idea.id]: k })}
+                        className={`px-4 py-2 text-xs font-mono-tight uppercase tracking-widest border border-foreground rounded-sm ${kind === k ? 'bg-accent text-accent-foreground' : 'bg-card hover:bg-secondary'}`}>
+                        {KIND_LABEL[k]}
+                      </button>
+                    ))}
+                  </div>
+                  <p className="text-sm mb-4 max-w-2xl">{KIND_HELP[kind]} The template fills in your answers instantly. The AI version writes a sharper one tailored to the idea.</p>
                   <div className="inline-flex border border-foreground rounded-sm overflow-hidden mb-4" role="group" aria-label="Prompt source">
                     {(['rules', 'ai'] as const).map((m) => (
                       <button key={m} type="button" aria-pressed={mode === m} onClick={() => setPm({ ...pm, [idea.id]: m })}
@@ -129,7 +140,7 @@ export default function Results(p: Props) {
                   </div>
                   {!built && (
                     <div>
-                      <button className="btn-brutal" disabled={p.busy === busyKey || (mode === 'ai' && !p.aiReady)} onClick={() => p.onPrompt(idea, mode)}>
+                      <button className="btn-brutal" disabled={p.busy === busyKey || (mode === 'ai' && !p.aiReady)} onClick={() => p.onPrompt(idea, mode, kind)}>
                         <Wand2 className="h-4 w-4" />{p.busy === busyKey ? 'Writing...' : mode === 'rules' ? 'Fill the template' : 'Write with AI'}
                       </button>
                       {mode === 'ai' && !p.aiReady && <p className="mt-3 text-sm">AI-written prompts need an API key. Add one on the finder step, or use the template.</p>}
@@ -141,7 +152,7 @@ export default function Results(p: Props) {
                       <div className="mt-4 flex flex-wrap gap-3">
                         <button className="btn-brutal" onClick={() => p.onCopyPrompt(built)}><Copy className="h-4 w-4" />Copy prompt</button>
                         <button className="btn-outline" onClick={() => p.onDownloadPrompt(built, idea)}><Download className="h-4 w-4" />Download .md</button>
-                        <button className="btn-outline" disabled={p.busy === busyKey || (mode === 'ai' && !p.aiReady)} onClick={() => p.onPrompt(idea, mode)}><RotateCcw className="h-4 w-4" />Regenerate</button>
+                        <button className="btn-outline" disabled={p.busy === busyKey || (mode === 'ai' && !p.aiReady)} onClick={() => p.onPrompt(idea, mode, kind)}><RotateCcw className="h-4 w-4" />Regenerate</button>
                       </div>
                     </div>
                   )}
