@@ -78,6 +78,42 @@ export function prune(a: Answers): Answers {
   return out;
 }
 
+/** Small seeded generator so random routes can be repeated in tests. */
+export function seeded(seed: number): () => number {
+  let t = seed >>> 0;
+  return () => {
+    t = (t + 0x6d2b79f5) >>> 0;
+    let r = Math.imul(t ^ (t >>> 15), 1 | t);
+    r = (r + Math.imul(r ^ (r >>> 7), 61 | r)) ^ r;
+    return ((r ^ (r >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/** Fill a whole route at random: one region (sometimes two), then every question that becomes visible. */
+export function randomAnswers(rng: () => number = Math.random): Answers {
+  const pick = (list: string[], n: number) => {
+    const pool = [...list];
+    const out: string[] = [];
+    while (out.length < n && pool.length) out.push(pool.splice(Math.floor(rng() * pool.length), 1)[0]);
+    return out;
+  };
+  const a: Answers = {};
+  a[REGION_Q.id] = { picks: pick(REGION_Q.o, rng() < 0.25 ? 2 : 1), other: '' };
+  for (let pass = 0; pass < 10; pass++) {
+    let added = false;
+    flat(route(a)).forEach(({ q }) => {
+      if (a[q.id] || q.id === REGION_Q.id) return;
+      const opts = qOpts(q, a);
+      if (!opts.length) return;
+      const n = q.max <= 1 ? 1 : 2 + Math.floor(rng() * (Math.min(q.max, 3) - 1));
+      a[q.id] = { picks: pick(opts, n), other: '' };
+      added = true;
+    });
+    if (!added) break;
+  }
+  return prune(a);
+}
+
 export function answersText(a: Answers): string {
   const out: string[] = [];
   route(a).forEach((s) => {

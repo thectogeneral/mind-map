@@ -1,6 +1,6 @@
 'use client';
 import { useState } from 'react';
-import { ArrowRight, Copy, Download, FileText, Sparkles, Wand2, FileDown, RotateCcw, Pencil, Check } from 'lucide-react';
+import { ArrowRight, Copy, Download, FileText, Sparkles, Wand2, FileDown, RotateCcw, Pencil, Check, Shuffle } from 'lucide-react';
 import { Result, CRITERIA, ranked, sentence, Idea } from '@/lib/types';
 import { Built } from '@/lib/report';
 import { PromptKind, KIND_LABEL, KIND_HELP } from '@/lib/prompt';
@@ -18,6 +18,7 @@ interface Props {
   onDownloadPDF: () => void;
   onEdit: () => void;
   onRerun: () => void;
+  onRandomize: () => void;
   onMode: () => void;
 }
 
@@ -166,6 +167,7 @@ export default function Results(p: Props) {
       <div className="mt-10 flex flex-wrap gap-3 border-t border-foreground pt-6">
         <button className="btn-outline" onClick={p.onEdit}><Pencil className="h-4 w-4" />Edit answers</button>
         <button className="btn-outline" onClick={p.onRerun}><RotateCcw className="h-4 w-4" />Run again</button>
+        <button className="btn-outline" onClick={p.onRandomize}><Shuffle className="h-4 w-4" />Randomize again</button>
         <button className="btn-outline" onClick={p.onMode}>Switch finder</button>
       </div>
     </div>

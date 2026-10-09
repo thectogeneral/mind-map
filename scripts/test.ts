@@ -1,4 +1,4 @@
-import { DOMAINS, REGION_Q, route, flat, answeredCount, Answers, prune, picksOf } from '../src/lib/engine';
+import { DOMAINS, REGION_Q, route, flat, answeredCount, Answers, prune, picksOf, qOpts, randomAnswers, seeded } from '../src/lib/engine';
 import { runRules } from '../src/lib/rules';
 let fails = 0;
 const ok = (c: boolean, m: string) => { if (!c) { fails++; console.log('FAIL', m); } else console.log('ok  ', m); };
@@ -24,6 +24,26 @@ for (const d of DOMAINS) {
   const res = runRules(a);
   ok(res.ideas.length >= 4 && res.details.length === 3, `${d.name}: rules give ${res.ideas.length} ideas, ${res.details.length} details`);
   ok(res.capped === false || true, 'cap flag');
+}
+// randomize: 200 seeded random routes
+{
+  let bad = 0;
+  const seen = new Set<string>();
+  for (let i = 1; i <= 200; i++) {
+    const a = randomAnswers(seeded(i));
+    const f = flat(route(a));
+    seen.add(picksOf(a, REGION_Q.id).join('+'));
+    const onRoute = new Set(f.map((x) => x.q.id));
+    const offRoute = Object.keys(a).some((k) => !onRoute.has(k));
+    const badPick = f.some(({ q }) => picksOf(a, q.id).some((x) => !qOpts(q, a).includes(x)) || picksOf(a, q.id).length > q.max);
+    const unanswered = f.some(({ q }) => !picksOf(a, q.id).length);
+    const res = runRules(a);
+    if (answeredCount(a) < 12 || offRoute || badPick || unanswered || res.ideas.length < 4) bad++;
+    if (JSON.stringify(prune(a)) !== JSON.stringify(a)) bad++;
+  }
+  ok(bad === 0, `randomize: 200 random routes valid (${seen.size} region combinations)`);
+  ok(JSON.stringify(randomAnswers(seeded(7))) === JSON.stringify(randomAnswers(seeded(7))), 'randomize: same seed gives same route');
+  ok(JSON.stringify(randomAnswers(seeded(7))) !== JSON.stringify(randomAnswers(seeded(8))), 'randomize: different seeds differ');
 }
 // two regions
 const two = fill(['Games', 'Education and learning']);

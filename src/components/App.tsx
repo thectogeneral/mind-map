@@ -1,11 +1,11 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Cpu, Copy, Pencil, Sparkles, Wand2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Cpu, Copy, Pencil, Shuffle, Sparkles, Wand2 } from 'lucide-react';
 import Logo from './Logo';
 import Rail from './Rail';
 import Results from './Results';
 import {
-  Answers, DOMAINS, REGION_Q, answeredCount, answersText, flat, isAns, listOf, optText, picksOf, prune, qOpts, qText, route,
+  Answers, DOMAINS, REGION_Q, answeredCount, answersText, flat, isAns, listOf, optText, picksOf, prune, qOpts, qText, randomAnswers, route,
 } from '@/lib/engine';
 import { Result, Idea } from '@/lib/types';
 import { runRules } from '@/lib/rules';
@@ -93,6 +93,16 @@ export default function App() {
   };
   const edit = (id: string) => { setCur(id); go('q'); };
 
+  /* randomize: fill a route at random and go straight to ideas (rule-based, no key needed) */
+  const randomize = () => {
+    setError('');
+    try {
+      const a = randomAnswers();
+      const r = runRules(a);
+      setAns(a); setCur('y.skill'); setResult(r); setPrompts([]); go('results');
+    } catch (e) { setError((e as Error).message); }
+  };
+
   /* finders */
   const startRules = () => {
     setError('');
@@ -177,6 +187,7 @@ export default function App() {
                 </p>
                 <div className="mt-8 flex flex-wrap gap-4">
                   <button className="btn-brutal h-12 px-6" onClick={() => { setAns({}); setResult(null); setPrompts([]); setCur('y.skill'); go('q'); }}>Start the route<ArrowRight className="h-4 w-4" /></button>
+                  <button className="btn-outline h-12 px-6" onClick={randomize}><Shuffle className="h-4 w-4" />Randomize</button>
                   {saved && <button className="btn-outline h-12 px-6" onClick={() => go(result ? 'results' : 'q')}>Resume where you left off</button>}
                 </div>
                 <ul className="mt-8 flex flex-wrap gap-x-8 gap-y-3 text-sm text-muted-foreground">
@@ -316,6 +327,7 @@ export default function App() {
             onDownloadMD={() => download('mindmap-report.md', md())}
             onDownloadPDF={() => savePDF(md(), 'mindmap-report.pdf')}
             onEdit={() => go('review')}
+            onRandomize={randomize}
             onRerun={() => (result.mode === 'ai' ? startAI(true) : startRules())}
             onMode={() => go('mode')} />
         )}
