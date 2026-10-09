@@ -95,10 +95,11 @@ export default function App() {
   const edit = (id: string) => { setCur(id); go('q'); };
 
   /* randomize: fill a route at random and go straight to ideas (rule-based, no key needed) */
-  const randomize = () => {
+  const MIN_RANDOM = 5;
+  const randomize = (keep = false) => {
     setError('');
     try {
-      const a = randomAnswers();
+      const a = randomAnswers(Math.random, keep ? ans : {});
       const r = runRules(a);
       setAns(a); setCur('y.skill'); setResult(r); setPrompts([]); setRolled(true); go('results');
     } catch (e) { setError((e as Error).message); }
@@ -188,7 +189,7 @@ export default function App() {
                 </p>
                 <div className="mt-8 flex flex-wrap gap-4">
                   <button className="btn-brutal h-12 px-6" onClick={() => { setAns({}); setResult(null); setPrompts([]); setCur('y.skill'); go('q'); }}>Start the route<ArrowRight className="h-4 w-4" /></button>
-                  <button className="btn-outline h-12 px-6" onClick={randomize}><Shuffle className="h-4 w-4" />Randomize</button>
+                  <button className="btn-outline h-12 px-6" onClick={() => randomize()}><Shuffle className="h-4 w-4" />Randomize</button>
                   {saved && <button className="btn-outline h-12 px-6" onClick={() => go(result ? 'results' : 'q')}>Resume where you left off</button>}
                 </div>
                 <ul className="mt-8 flex flex-wrap gap-x-8 gap-y-3 text-sm text-muted-foreground">
@@ -225,6 +226,7 @@ export default function App() {
             <div className="lg:col-span-4"><Rail stations={stations} a={ans} curId={here.s.id} onGo={goStation} total={total} done={done} /></div>
             <div className="lg:col-span-8">
               <Question key={here.q.id} ans={ans} here={here} idx={idx} total={f.length} refEl={stageRef}
+                done={done} minRandom={MIN_RANDOM} onRandomRest={() => randomize(true)}
                 onToggle={toggle} onOther={setOther} onBack={() => step(-1)} onNext={() => step(1)} onReview={() => go('review')} />
             </div>
           </div>
@@ -332,7 +334,7 @@ export default function App() {
             onDownloadMD={() => download('mindmap-report.md', md())}
             onDownloadPDF={() => savePDF(md(), 'mindmap-report.pdf')}
             onEdit={() => go('review')}
-            onRandomize={randomize}
+            onRandomize={() => randomize()}
             onRerun={() => (result.mode === 'ai' ? startAI(true) : startRules())}
             onMode={() => go('mode')} />
         )}
@@ -358,9 +360,10 @@ export default function App() {
   );
 }
 
-function Question({ ans, here, idx, total, refEl, onToggle, onOther, onBack, onNext, onReview }: {
+function Question({ ans, here, idx, total, refEl, done, minRandom, onRandomRest, onToggle, onOther, onBack, onNext, onReview }: {
   ans: Answers; here: { q: ReturnType<typeof flat>[number]['q']; s: ReturnType<typeof route>[number] }; idx: number; total: number;
   refEl: React.RefObject<HTMLHeadingElement>;
+  done: number; minRandom: number; onRandomRest: () => void;
   onToggle: (id: string, max: number, opt: string) => void; onOther: (id: string, t: string) => void;
   onBack: () => void; onNext: () => void; onReview: () => void;
 }) {
@@ -400,6 +403,13 @@ function Question({ ans, here, idx, total, refEl, onToggle, onOther, onBack, onN
         <button className="btn-outline" onClick={onBack} disabled={idx === 0}><ArrowLeft className="h-4 w-4" />Back</button>
         <button className="btn-brutal" onClick={onNext}>{last ? 'Review route' : isAns(ans, q.id) ? 'Next' : 'Skip'}<ArrowRight className="h-4 w-4" /></button>
         <button className="btn-outline" onClick={onReview}><Pencil className="h-4 w-4" />Review route</button>
+      </div>
+      <div className="mt-6 border-t border-border pt-5 flex flex-wrap items-center gap-3">
+        <button className="btn-outline" disabled={done < minRandom} onClick={onRandomRest}><Shuffle className="h-4 w-4" />Randomize the rest</button>
+        <span className="text-sm text-muted-foreground">
+          {done < minRandom ? `Answer ${minRandom - done} more to unlock. ` : 'Keeps your answers, fills every other question, then shows ideas. '}
+          {done >= minRandom && !picksOf(ans, REGION_Q.id).length ? 'No region chosen yet, so one is picked for you.' : ''}
+        </span>
       </div>
     </div>
   );

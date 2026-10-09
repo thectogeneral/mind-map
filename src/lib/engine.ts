@@ -89,8 +89,9 @@ export function seeded(seed: number): () => number {
   };
 }
 
-/** Fill a whole route at random: one region (sometimes two), then every question that becomes visible. */
-export function randomAnswers(rng: () => number = Math.random): Answers {
+/** Fill a route at random: one region (sometimes two), then every question that becomes visible.
+ *  With `base`, existing answers are kept and only the unanswered questions are filled. */
+export function randomAnswers(rng: () => number = Math.random, base: Answers = {}): Answers {
   const pick = (list: string[], n: number) => {
     const pool = [...list];
     const out: string[] = [];
@@ -98,7 +99,8 @@ export function randomAnswers(rng: () => number = Math.random): Answers {
     return out;
   };
   const a: Answers = {};
-  a[REGION_Q.id] = { picks: pick(REGION_Q.o, rng() < 0.25 ? 2 : 1), other: '' };
+  Object.entries(base).forEach(([k, v]) => { if (v.picks.length || v.other.trim()) a[k] = { picks: [...v.picks], other: v.other }; });
+  if (!picksOf(a, REGION_Q.id).length) a[REGION_Q.id] = { picks: pick(REGION_Q.o, rng() < 0.25 ? 2 : 1), other: '' };
   for (let pass = 0; pass < 10; pass++) {
     let added = false;
     flat(route(a)).forEach(({ q }) => {

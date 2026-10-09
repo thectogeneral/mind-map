@@ -42,6 +42,14 @@ for (const d of DOMAINS) {
     if (JSON.stringify(prune(a)) !== JSON.stringify(a)) bad++;
   }
   ok(bad === 0, `randomize: 200 random routes valid (${seen.size} region combinations)`);
+  const mine = fill(['Travel, events and local life']);
+  const partial: Answers = {};
+  ['y.skill', 'y.hours', 'y.budget', REGION_Q.id, 'tr.sub'].forEach((id) => { if (mine[id]) partial[id] = mine[id]; });
+  const rest = randomAnswers(seeded(3), partial);
+  ok(Object.entries(partial).every(([k, v]) => JSON.stringify(rest[k]) === JSON.stringify(v)), 'randomize the rest keeps existing answers');
+  ok(flat(route(rest)).every(({ q }) => picksOf(rest, q.id).length > 0), 'randomize the rest fills every other question');
+  const fromYou = randomAnswers(seeded(4), { 'y.skill': mine['y.skill'] });
+  ok(picksOf(fromYou, REGION_Q.id).length > 0 && JSON.stringify(fromYou['y.skill']) === JSON.stringify(mine['y.skill']), 'randomize the rest picks a region when none chosen');
   ok(JSON.stringify(randomAnswers(seeded(7))) === JSON.stringify(randomAnswers(seeded(7))), 'randomize: same seed gives same route');
   ok(JSON.stringify(randomAnswers(seeded(7))) !== JSON.stringify(randomAnswers(seeded(8))), 'randomize: different seeds differ');
 }
