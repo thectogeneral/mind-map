@@ -5,8 +5,11 @@ import { Result, CRITERIA, ranked, sentence, Idea } from '@/lib/types';
 import { Built } from '@/lib/report';
 import { PromptKind, KIND_LABEL, KIND_HELP } from '@/lib/prompt';
 
+export interface AnswerGroup { title: string; rows: { q: string; a: string[] }[] }
 interface Props {
   r: Result;
+  rolled: boolean;
+  answers: AnswerGroup[];
   prompts: Built[];
   busy: string | null;
   aiReady: boolean;
@@ -62,6 +65,27 @@ export default function Results(p: Props) {
           </div>
         </div>
       </section>
+
+      <details className="mt-6 border border-foreground rounded-sm bg-card group" open={p.rolled}>
+        <summary className="flex items-center justify-between cursor-pointer list-none px-5 md:px-7 py-4 font-display text-lg font-bold hover:bg-amber-soft">
+          <span>{p.rolled ? 'The answers Randomize chose' : 'The answers behind these ideas'}<span className="ml-2 text-sm font-normal text-muted-foreground">{p.answers.reduce((n, g) => n + g.rows.length, 0)} answers</span></span>
+          <span className="text-accent text-xl group-open:rotate-45 transition-transform">+</span>
+        </summary>
+        <div className="px-5 md:px-7 pb-6 space-y-6">
+          {p.answers.map((g) => (
+            <div key={g.title}>
+              <div className="eyebrow border-b border-foreground pb-1 mb-2">{g.title}</div>
+              {g.rows.map((row) => (
+                <div key={row.q} className="grid sm:grid-cols-12 gap-1 sm:gap-4 py-2 border-b border-border text-sm">
+                  <div className="sm:col-span-5 text-muted-foreground">{row.q}</div>
+                  <div className="sm:col-span-7 flex flex-wrap gap-1.5">{row.a.map((x) => <span key={x} className="tag">{x}</span>)}</div>
+                </div>
+              ))}
+            </div>
+          ))}
+          <button className="btn-outline" onClick={p.onEdit}><Pencil className="h-4 w-4" />Edit answers</button>
+        </div>
+      </details>
 
       <ol className="mt-10 space-y-6">
         {list.map(({ idea, score }, n) => {

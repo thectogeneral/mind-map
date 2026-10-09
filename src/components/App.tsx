@@ -26,6 +26,7 @@ export default function App() {
   const [result, setResult] = useState<Result | null>(null);
   const [prompts, setPrompts] = useState<Built[]>([]);
   const [saved, setSaved] = useState<boolean>(false);
+  const [rolled, setRolled] = useState(false);
   const [apiKey, setApiKey] = useState('');
   const [status, setStatus] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
@@ -99,7 +100,7 @@ export default function App() {
     try {
       const a = randomAnswers();
       const r = runRules(a);
-      setAns(a); setCur('y.skill'); setResult(r); setPrompts([]); go('results');
+      setAns(a); setCur('y.skill'); setResult(r); setPrompts([]); setRolled(true); go('results');
     } catch (e) { setError((e as Error).message); }
   };
 
@@ -108,7 +109,7 @@ export default function App() {
     setError('');
     try {
       const r = runRules(ans);
-      setResult(r); setPrompts([]); go('results');
+      setResult(r); setPrompts([]); setRolled(false); go('results');
     } catch (e) { setError((e as Error).message); }
   };
   const startAI = async (fresh: boolean) => {
@@ -118,7 +119,7 @@ export default function App() {
     try {
       const r = await runAI(ans, apiKey.trim(), (step, st) => { if (runId.current === id) setStatus((s) => ({ ...s, [step]: st })); }, partial.current);
       if (runId.current !== id) return;
-      setResult(r); setPrompts([]); go('results');
+      setResult(r); setPrompts([]); setRolled(false); go('results');
     } catch (e) {
       if (runId.current !== id) return;
       setError(aiErrorText(e));
@@ -319,7 +320,11 @@ export default function App() {
         )}
 
         {screen === 'results' && result && (
-          <Results r={result} prompts={prompts} busy={busy} aiReady={aiReady}
+          <Results r={result} prompts={prompts} rolled={rolled}
+            answers={stations.filter((s) => s.qs.some((q) => isAns(ans, q.id))).map((s) => ({
+              title: `${s.domain ? s.domain.name.replace(/\s*\(.*\)/, '') + ' / ' : ''}${s.title}`,
+              rows: s.qs.filter((q) => isAns(ans, q.id)).map((q) => ({ q: qText(q, ans), a: listOf(ans, q.id).map((x) => optText(q, x, ans)) })),
+            }))} busy={busy} aiReady={aiReady}
             onPrompt={makePrompt}
             onCopyPrompt={(b) => doCopy(b.text, 'Prompt')}
             onDownloadPrompt={(b, i) => download(`${KIND_FILE[b.kind || 'build']}-${slug(i.title)}.md`, b.text)}
