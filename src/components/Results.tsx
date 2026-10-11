@@ -3,7 +3,8 @@ import { useState } from 'react';
 import { ArrowRight, Copy, Download, FileText, Sparkles, Wand2, FileDown, RotateCcw, Pencil, Check, Shuffle } from 'lucide-react';
 import { Result, CRITERIA, ranked, sentence, Idea } from '@/lib/types';
 import { Built } from '@/lib/report';
-import { PromptKind, KIND_LABEL, KIND_HELP } from '@/lib/prompt';
+import { IdeaKind, IDEA_KINDS, KIND_LABEL, KIND_HELP } from '@/lib/prompt';
+import { PromptBox, RoutePrompt } from './PromptBox';
 
 export interface AnswerGroup { title: string; rows: { q: string; a: string[] }[] }
 interface Props {
@@ -13,9 +14,9 @@ interface Props {
   prompts: Built[];
   busy: string | null;
   aiReady: boolean;
-  onPrompt: (idea: Idea, mode: 'rules' | 'ai', kind: PromptKind) => void;
+  onPrompt: (idea: Idea | null, mode: 'rules' | 'ai', kind: IdeaKind | 'ideas') => void;
   onCopyPrompt: (b: Built) => void;
-  onDownloadPrompt: (b: Built, idea: Idea) => void;
+  onDownloadPrompt: (b: Built, idea: Idea | null) => void;
   onCopyMD: () => void;
   onDownloadMD: () => void;
   onDownloadPDF: () => void;
@@ -42,7 +43,7 @@ export default function Results(p: Props) {
   const list = ranked(r);
   const [open, setOpen] = useState<string | null>(list[0]?.idea.id || null);
   const [pm, setPm] = useState<Record<string, 'rules' | 'ai'>>({});
-  const [pk, setPk] = useState<Record<string, PromptKind>>({});
+  const [pk, setPk] = useState<Record<string, IdeaKind>>({});
   return (
     <div>
       <section className="bg-primary text-primary-foreground border border-foreground rounded-sm p-6 md:p-10 relative overflow-hidden shadow-[6px_6px_0_hsl(var(--accent))]">
@@ -86,6 +87,11 @@ export default function Results(p: Props) {
           <button className="btn-outline" onClick={p.onEdit}><Pencil className="h-4 w-4" />Edit answers</button>
         </div>
       </details>
+
+      <div className="mt-6">
+        <RoutePrompt prompts={p.prompts} busy={p.busy} aiReady={p.aiReady} help={KIND_HELP.ideas}
+          onGenerate={(m) => p.onPrompt(null, m, 'ideas')} onCopy={p.onCopyPrompt} onDownload={(b) => p.onDownloadPrompt(b, null)} />
+      </div>
 
       <ol className="mt-10 space-y-6">
         {list.map(({ idea, score }, n) => {
@@ -147,7 +153,7 @@ export default function Results(p: Props) {
                 <div className="border-t border-foreground bg-amber-soft p-5 md:p-7">
                   <div className="eyebrow mb-2">§ Prompts</div>
                   <div className="flex flex-wrap gap-2 mb-4" role="group" aria-label="Prompt type">
-                    {(['build', 'brief', 'design'] as const).map((k) => (
+                    {IDEA_KINDS.map((k) => (
                       <button key={k} type="button" aria-pressed={kind === k} onClick={() => setPk({ ...pk, [idea.id]: k })}
                         className={`px-4 py-2 text-xs font-mono-tight uppercase tracking-widest border border-foreground rounded-sm ${kind === k ? 'bg-accent text-accent-foreground' : 'bg-card hover:bg-secondary'}`}>
                         {KIND_LABEL[k]}
@@ -155,32 +161,8 @@ export default function Results(p: Props) {
                     ))}
                   </div>
                   <p className="text-sm mb-4 max-w-2xl">{KIND_HELP[kind]} The template fills in your answers instantly. The AI version writes a sharper one tailored to the idea.</p>
-                  <div className="inline-flex border border-foreground rounded-sm overflow-hidden mb-4" role="group" aria-label="Prompt source">
-                    {(['rules', 'ai'] as const).map((m) => (
-                      <button key={m} type="button" aria-pressed={mode === m} onClick={() => setPm({ ...pm, [idea.id]: m })}
-                        className={`px-4 py-2 text-xs font-mono-tight uppercase tracking-widest ${mode === m ? 'bg-primary text-primary-foreground' : 'bg-card hover:bg-secondary'}`}>
-                        {m === 'rules' ? 'Template, no AI' : 'AI-written'}
-                      </button>
-                    ))}
-                  </div>
-                  {!built && (
-                    <div>
-                      <button className="btn-brutal" disabled={p.busy === busyKey || (mode === 'ai' && !p.aiReady)} onClick={() => p.onPrompt(idea, mode, kind)}>
-                        <Wand2 className="h-4 w-4" />{p.busy === busyKey ? 'Writing...' : mode === 'rules' ? 'Fill the template' : 'Write with AI'}
-                      </button>
-                      {mode === 'ai' && !p.aiReady && <p className="mt-3 text-sm">AI-written prompts need an API key. Add one on the finder step, or use the template.</p>}
-                    </div>
-                  )}
-                  {built && (
-                    <div>
-                      <pre className="whitespace-pre-wrap break-words text-[13px] leading-relaxed bg-card border border-foreground rounded-sm p-4 max-h-[28rem] overflow-y-auto font-mono-tight">{built.text}</pre>
-                      <div className="mt-4 flex flex-wrap gap-3">
-                        <button className="btn-brutal" onClick={() => p.onCopyPrompt(built)}><Copy className="h-4 w-4" />Copy prompt</button>
-                        <button className="btn-outline" onClick={() => p.onDownloadPrompt(built, idea)}><Download className="h-4 w-4" />Download .md</button>
-                        <button className="btn-outline" disabled={p.busy === busyKey || (mode === 'ai' && !p.aiReady)} onClick={() => p.onPrompt(idea, mode, kind)}><RotateCcw className="h-4 w-4" />Regenerate</button>
-                      </div>
-                    </div>
-                  )}
+                  <PromptBox mode={mode} onMode={(m) => setPm({ ...pm, [idea.id]: m })} built={built} busy={p.busy === busyKey} aiReady={p.aiReady}
+                    onGenerate={(m) => p.onPrompt(idea, m, kind)} onCopy={p.onCopyPrompt} onDownload={(b) => p.onDownloadPrompt(b, idea)} />
                 </div>
               )}
             </li>

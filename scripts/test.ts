@@ -1,5 +1,8 @@
 import { DOMAINS, REGION_Q, route, flat, answeredCount, Answers, prune, picksOf, qOpts, randomAnswers, seeded } from '../src/lib/engine';
 import { runRules } from '../src/lib/rules';
+import { buildIdeasRules, buildRefineRules } from '../src/lib/prompt';
+import { CRITERIA } from '../src/lib/types';
+import { answersText, isAns } from '../src/lib/engine';
 let fails = 0;
 const ok = (c: boolean, m: string) => { if (!c) { fails++; console.log('FAIL', m); } else console.log('ok  ', m); };
 function fill(names: string[], n = 0): Answers {
@@ -52,6 +55,24 @@ for (const d of DOMAINS) {
   ok(picksOf(fromYou, REGION_Q.id).length > 0 && JSON.stringify(fromYou['y.skill']) === JSON.stringify(mine['y.skill']), 'randomize the rest picks a region when none chosen');
   ok(JSON.stringify(randomAnswers(seeded(7))) === JSON.stringify(randomAnswers(seeded(7))), 'randomize: same seed gives same route');
   ok(JSON.stringify(randomAnswers(seeded(7))) !== JSON.stringify(randomAnswers(seeded(8))), 'randomize: different seeds differ');
+}
+// prompts: ideas-and-refinement (route) and refine (per idea)
+{
+  const a = randomAnswers(seeded(11));
+  const r = runRules(a);
+  const none = buildIdeasRules(a);
+  const withIdeas = buildIdeasRules(a, r);
+  const answered = flat(route(a)).filter(({ q }) => isAns(a, q.id)).length;
+  const lines = answersText(a).split('\n').filter((l) => !l.startsWith('['));
+  ok(lines.length === answered && lines.every((l) => none.includes(l.replace(/^[\w.]+ \| /, ''))), `ideas prompt includes all ${answered} answers`);
+  ok(/Problems it solves/.test(none) && /Refine my answers/.test(none), 'ideas prompt asks for problems solved and answer refinement');
+  ok(!/Ideas a rule-based finder produced/.test(none) && r.ideas.every((i) => withIdeas.includes(i.title)), 'ideas prompt lists the finder ideas only when results exist');
+  const idea = r.ideas[0];
+  const ref = buildRefineRules(a, idea, r);
+  const sc = r.scores.find((x) => x.id === idea.id)!;
+  ok(CRITERIA.every((c, i) => ref.includes(`- ${c}: ${sc.c[i]} of 2`)) && ref.includes(sc.note), 'refine prompt has all 8 criterion scores and the weakest point');
+  ok(/Problems it solves/.test(ref) && /Change my answers/.test(ref) && ref.includes(idea.title), 'refine prompt asks for problems solved and answer changes');
+  ok(buildRefineRules(a, idea).includes('Score: not scored yet'), 'refine prompt works without results');
 }
 // two regions
 const two = fill(['Games', 'Education and learning']);

@@ -1,5 +1,5 @@
 import { Answers, buildCtx, Ctx, answersText } from './engine';
-import { Idea, Result, lc, cap, sentence } from './types';
+import { Idea, Result, lc, cap, sentence, ranked, CRITERIA } from './types';
 import { callAI } from './ai';
 
 const bullets = (a: string[]) => (a.length ? a.map((x) => `- ${x}`).join('\n') : '- (none chosen)');
@@ -102,13 +102,17 @@ ${answersText(a)}`;
 }
 
 
-export type PromptKind = 'build' | 'brief' | 'design';
-export const KIND_LABEL: Record<PromptKind, string> = { build: 'Build prompt', brief: 'Explainer prompt', design: 'UI design prompt' };
-export const KIND_FILE: Record<PromptKind, string> = { build: 'build-prompt', brief: 'explainer-prompt', design: 'ui-design-prompt' };
+export type IdeaKind = 'build' | 'brief' | 'design' | 'refine';
+export type PromptKind = IdeaKind | 'ideas';
+export const IDEA_KINDS: IdeaKind[] = ['build', 'brief', 'design', 'refine'];
+export const KIND_LABEL: Record<PromptKind, string> = { build: 'Build prompt', brief: 'Explainer prompt', design: 'UI design prompt', refine: 'Refine this idea', ideas: 'Ideas and refinement prompt' };
+export const KIND_FILE: Record<PromptKind, string> = { build: 'build-prompt', brief: 'explainer-prompt', design: 'ui-design-prompt', refine: 'refine-prompt', ideas: 'ideas-prompt' };
 export const KIND_HELP: Record<PromptKind, string> = {
   build: 'A prompt for a coding agent, built from this idea and all your answers.',
   brief: 'A prompt that makes an AI explain the product and its build prompt to you in plain language: what each part means, the risks, costs, a first-week plan, and what to decide.',
   design: 'A prompt for a UI design tool or an AI designer (Figma AI, v0, Claude, Lovable and similar): screens, flows, components, states and visual direction for this product.',
+  refine: 'A prompt that makes an AI sharpen this idea: the problems it solves, a tighter audience, a stronger pitch, fixes for its weakest scores, and which of your answers to change.',
+  ideas: 'A prompt that makes an AI generate and refine product ideas from all your answers, name the problems each one solves, and suggest better answers for the vague or contradictory ones.',
 };
 
 /** Screens implied by the MVP features, used by the design prompt. */
@@ -245,10 +249,140 @@ ${answersText(a)}`;
   return (await callAI(meta, key, 4500)).trim();
 }
 
+/** Scores, weakest point and test plan for one idea, as plain lines. */
+function ideaEvidence(idea: Idea, r?: Result) {
+  const sc = r?.scores.find((x) => x.id === idea.id);
+  const d = r?.details.find((x) => x.id === idea.id);
+  const lines = sc ? [
+    `Score: ${sc.total} of 16${sc.generic ? ' (flagged as generic)' : ''}`,
+    ...CRITERIA.map((c, i) => `- ${c}: ${sc.c[i]} of 2`),
+    `Weakest point: ${sc.note}`,
+  ] : ['Score: not scored yet'];
+  const det = d ? [`Strongest reason it fails: ${d.fails}`, `Friction to check: ${d.friction}`, `What to change: ${d.change}`, `Cheapest test this week: ${d.test}`] : [];
+  return { lines, det };
+}
+
+/** Template prompt that makes an AI sharpen one idea. */
+export function buildRefineRules(a: Answers, idea: Idea, r?: Result): string {
+  const c = buildCtx(a);
+  const { mvp, later } = fields(c, idea);
+  const { lines, det } = ideaEvidence(idea, r);
+  return `# Refine prompt: ${idea.title}
+
+You are a sharp, honest product strategist. Below is a product idea found from my answers by a rule-based finder. It is a first draft, not a verdict. Refine it: make it narrower, clearer and easier to test. Do not flatter it. Where you are guessing, say so.
+
+## The idea
+${sentence(idea)}
+
+- Region and corner: ${idea.region} / ${idea.corner}
+- Audience: ${idea.audience}${idea.moment ? ` (${lc(idea.moment)})` : ''}
+- Platform: ${idea.platform}
+- Core action: ${cap(idea.action)}
+- What brings people back: ${cap(idea.retention)}
+- Growth loop: ${cap(idea.loop)}
+- How it earns: ${idea.money}
+- What makes it specific: ${idea.angle || 'not chosen yet'}
+- MVP features: ${mvp.join('; ') || 'none chosen'}
+- Later features: ${later.length ? later.join('; ') : 'none'}
+
+## How the finder scored it
+${lines.join('\n')}
+${det.length ? '\n' + det.join('\n') + '\n' : ''}
+## About me
+${r?.profile || 'Not stated.'}
+${(r?.constraints || []).length ? 'Constraints: ' + (r?.constraints || []).join('; ') : ''}
+
+## What I want from you
+1. **Problems it solves.** Name the three most likely problems this product solves. For each: who has it, how often, what it costs them today, and how they cope now. Label each as a hypothesis and say how I would check it.
+2. **A sharper audience and moment.** Narrow the audience to one reachable group and the exact moment they would use it. Say what you cut and why.
+3. **Three versions of the pitch.** One sentence each, in different styles: plain, benefit-led and story-led.
+4. **Fix the weakest scores.** Take the two lowest-scoring criteria above and give two concrete changes each, ranked by effort.
+5. **Features.** Which MVP features to keep, which to cut, and anything missing. Keep the first version buildable at my hours and budget.
+6. **Three alternative angles.** Different ways to make it specific, each with its trade-off.
+7. **Kill criteria.** Three measurable signals in the first month that would tell me to stop or change direction.
+8. **Change my answers.** Which answers in my questionnaire would you change to get a better idea from the finder? For each: the question, my current answer, your suggested answer and why.
+
+Be concise and concrete. Use headings. End with the single next action I should take this week.
+`;
+}
+
+export async function buildRefineAI(a: Answers, idea: Idea, key: string, r?: Result): Promise<string> {
+  const c = buildCtx(a);
+  const { mvp, later } = fields(c, idea);
+  const { lines, det } = ideaEvidence(idea, r);
+  const meta = `Write a refine prompt that a founder will paste into an AI assistant. The assistant should then sharpen the product idea below. The prompt must tell the assistant to: name the three most likely problems the product solves (who has each, how often, what it costs them, how they cope now, and how to check it, labelled as hypotheses); narrow the audience and moment; offer three versions of the pitch; fix the two weakest scored criteria with concrete changes; trim or complete the MVP features for the builder's limits; propose three alternative angles; set measurable kill criteria for the first month; and suggest which of the builder's questionnaire answers to change and why. Include the idea, its scores and the builder's context inside the prompt. Be honest, no flattery. ${META_COMMON}
+
+IDEA
+${JSON.stringify({ ...idea, mvp_features: mvp, later_features: later }, null, 2)}
+
+SCORES AND TEST PLAN
+${[...lines, ...det].join('\n')}
+
+BUILDER AND CONSTRAINTS
+${r?.profile || ''}
+${(r?.constraints || []).join('; ')}
+
+THEIR ANSWERS
+${answersText(a)}`;
+  return (await callAI(meta, key, 4500)).trim();
+}
+
+/** Answers as readable text, without internal ids. */
+const readableAnswers = (a: Answers) => answersText(a).replace(/^[\w.]+ \| /gm, '');
+
+/** Template prompt for the whole route: generate and refine ideas from every answer, and refine the answers. */
+export function buildIdeasRules(a: Answers, r?: Result): string {
+  const found = r ? ranked(r).map((x, i) => `${i + 1}. ${x.idea.title}: ${sentence(x.idea)} (score ${x.score.total} of 16)`) : [];
+  return `# Ideas and refinement prompt
+
+You are a sharp, honest product strategist. Below are my answers to a questionnaire about what I am drawn to, who I could serve and what I can build. I did not start from a problem, so help me find the problems worth solving. Generate ideas, refine them, and also tell me where my answers are weak. Do not flatter. Where you are guessing, say so.
+
+## My answers
+${readableAnswers(a) || '(no answers yet)'}
+${found.length ? `\n## Ideas a rule-based finder produced from these answers\nStart from these. Improve the good ones, replace the weak ones, and say which is which.\n${found.join('\n')}\n` : ''}
+## What I want from you
+1. **Who I am as a builder.** In four lines: what I am drawn to, what I can realistically build, my limits (time, money, team) and where my answers point.
+2. **Five to eight product ideas.** For each give:
+   - Name and one-sentence pitch
+   - Audience and the moment they would use it
+   - Core action and the first-run experience
+   - MVP features (3 to 5)
+   - How it earns
+   - **Problems it solves:** two or three concrete problems, who has each, how often, and what it costs them today. Label them hypotheses and say how to check each.
+   - Biggest risk
+3. **Refine.** Rank the ideas. Merge any that overlap. Take the best two and sharpen them: a narrower audience, a stronger angle, and what to cut.
+4. **Refine my answers.** Find the answers above that are vague, too broad, contradictory or at odds with my limits. For each one give: the question, my answer, why it is weak, and a better answer. Then list up to five questions the questionnaire did not ask that would have helped.
+5. **Next step.** The single cheapest test I should run this week, and what result would make me continue or stop.
+
+Use headings. Keep each idea short. Do not invent facts about me beyond my answers.
+`;
+}
+
+export async function buildIdeasAI(a: Answers, key: string, r?: Result): Promise<string> {
+  const found = r ? ranked(r).map((x) => `${x.idea.title}: ${sentence(x.idea)} (score ${x.score.total} of 16)`) : [];
+  const meta = `Write a prompt that a founder will paste into an AI assistant. The assistant should then generate and refine product ideas from the founder's questionnaire answers below. The prompt must tell the assistant to: summarise the builder and their limits; produce five to eight ideas, each with a pitch, audience and moment, core action, MVP features, how it earns, the two or three problems it solves (who has them, how often, what it costs, labelled as hypotheses with a way to check each) and the biggest risk; rank, merge and sharpen the best two; review the founder's answers and, for each vague, too broad or contradictory one, show the question, the answer, why it is weak and a better answer, plus questions the questionnaire should have asked; and end with the cheapest test for this week. Include the answers, and any ideas already found, inside the prompt so it stands alone. The founder did not start from a problem, so the prompt should help find the problems worth solving. ${META_COMMON}
+
+THEIR ANSWERS
+${readableAnswers(a)}
+
+IDEAS ALREADY FOUND
+${found.join('\n') || '(none yet)'}
+
+BUILDER AND CONSTRAINTS
+${r?.profile || ''}
+${(r?.constraints || []).join('; ')}`;
+  return (await callAI(meta, key, 4500)).trim();
+}
+
+export async function makeRoutePromptText(mode: 'rules' | 'ai', a: Answers, key: string, r?: Result): Promise<string> {
+  return mode === 'rules' ? buildIdeasRules(a, r) : buildIdeasAI(a, key, r);
+}
+
 /** One entry point for every prompt kind. */
-export async function makePromptText(kind: PromptKind, mode: 'rules' | 'ai', a: Answers, idea: Idea, key: string, r?: Result): Promise<string> {
+export async function makePromptText(kind: IdeaKind, mode: 'rules' | 'ai', a: Answers, idea: Idea, key: string, r?: Result): Promise<string> {
   if (kind === 'build') return mode === 'rules' ? buildPromptRules(a, idea, r) : buildPromptAI(a, idea, key, r);
   if (kind === 'brief') return mode === 'rules' ? buildBriefRules(a, idea, r) : buildBriefAI(a, idea, key, r);
+  if (kind === 'refine') return mode === 'rules' ? buildRefineRules(a, idea, r) : buildRefineAI(a, idea, key, r);
   return mode === 'rules' ? buildDesignRules(a, idea, r) : buildDesignAI(a, idea, key, r);
 }
 export { STD };

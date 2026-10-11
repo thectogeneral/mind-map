@@ -10,7 +10,8 @@ import {
 import { Result, Idea } from '@/lib/types';
 import { runRules } from '@/lib/rules';
 import { runAI, aiErrorText } from '@/lib/ai';
-import { makePromptText, PromptKind, KIND_FILE } from '@/lib/prompt';
+import { makePromptText, makeRoutePromptText, IdeaKind, KIND_FILE, KIND_HELP } from '@/lib/prompt';
+import { RoutePrompt } from './PromptBox';
 import { Built, reportMD } from '@/lib/report';
 import { copy, download, savePDF } from '@/lib/export';
 
@@ -129,13 +130,14 @@ export default function App() {
   };
 
   /* prompts */
-  const makePrompt = async (idea: Idea, mode: 'rules' | 'ai', kind: PromptKind) => {
-    if (!result) return;
-    const keyB = `${idea.id}:${mode}:${kind}`;
+  const makePrompt = async (idea: Idea | null, mode: 'rules' | 'ai', kind: IdeaKind | 'ideas') => {
+    const ideaId = idea ? idea.id : '_route';
+    if (!idea && kind !== 'ideas') return;
+    const keyB = `${ideaId}:${mode}:${kind}`;
     setBusy(keyB);
     try {
-      const text = await makePromptText(kind, mode, ans, idea, apiKey.trim(), result);
-      setPrompts((p) => [...p.filter((b) => !(b.ideaId === idea.id && b.mode === mode && (b.kind || 'build') === kind)), { ideaId: idea.id, mode, kind, text }]);
+      const text = idea && kind !== 'ideas' ? await makePromptText(kind, mode, ans, idea, apiKey.trim(), result || undefined) : await makeRoutePromptText(mode, ans, apiKey.trim(), result || undefined);
+      setPrompts((p) => [...p.filter((b) => !(b.ideaId === ideaId && b.mode === mode && (b.kind || 'build') === kind)), { ideaId, mode, kind, text }]);
     } catch (e) { say(aiErrorText(e)); }
     setBusy(null);
   };
@@ -258,7 +260,11 @@ export default function App() {
                   </div>
                 ))}
               </div>
-              <div className="mt-10 flex flex-wrap gap-3">
+              <div className="mt-10">
+                <RoutePrompt prompts={prompts} busy={busy} aiReady={aiReady} help={KIND_HELP.ideas}
+                  onGenerate={(m) => makePrompt(null, m, 'ideas')} onCopy={(b) => doCopy(b.text, 'Prompt')} onDownload={(b) => download(`${KIND_FILE.ideas}.md`, b.text)} />
+              </div>
+              <div className="mt-6 flex flex-wrap gap-3">
                 <button className="btn-brutal" disabled={done < 12 || !chosen.length} onClick={() => go('mode')}>Find my ideas<ArrowRight className="h-4 w-4" /></button>
                 <button className="btn-outline" onClick={() => go('q')}>Back to questions</button>
                 {result && <button className="btn-outline" onClick={() => go('results')}>See last ideas</button>}
@@ -329,7 +335,7 @@ export default function App() {
             }))} busy={busy} aiReady={aiReady}
             onPrompt={makePrompt}
             onCopyPrompt={(b) => doCopy(b.text, 'Prompt')}
-            onDownloadPrompt={(b, i) => download(`${KIND_FILE[b.kind || 'build']}-${slug(i.title)}.md`, b.text)}
+            onDownloadPrompt={(b, i) => download(`${KIND_FILE[b.kind || 'build']}${i ? '-' + slug(i.title) : ''}.md`, b.text)}
             onCopyMD={() => doCopy(md(), 'Markdown')}
             onDownloadMD={() => download('mindmap-report.md', md())}
             onDownloadPDF={() => savePDF(md(), 'mindmap-report.pdf')}

@@ -1,8 +1,8 @@
 import { Answers, route, isAns, listOf, qText, optText, flat } from './engine';
 import { Result, CRITERIA, ranked, sentence, cap } from './types';
 
-export interface Built { ideaId: string; mode: 'rules' | 'ai'; text: string; kind?: 'build' | 'brief' | 'design' }
-const KIND_NAME = { build: 'Build prompt', brief: 'Explainer prompt', design: 'UI design prompt' };
+export interface Built { ideaId: string; mode: 'rules' | 'ai'; text: string; kind?: 'build' | 'brief' | 'design' | 'refine' | 'ideas' }
+const KIND_NAME = { build: 'Build prompt', brief: 'Explainer prompt', design: 'UI design prompt', refine: 'Refine prompt', ideas: 'Ideas and refinement prompt' };
 
 export function reportMD(a: Answers, r: Result | null, prompts: Built[] = []): string {
   const L: string[] = [];
@@ -35,7 +35,7 @@ export function reportMD(a: Answers, r: Result | null, prompts: Built[] = []): s
   }
   prompts.forEach((p) => {
     const i = r?.ideas.find((x) => x.id === p.ideaId);
-    L.push(`## ${KIND_NAME[p.kind || 'build']} (${p.mode === 'ai' ? 'AI-written' : 'template'}): ${i ? i.title : p.ideaId}`, '', p.text.replace(/^# .*\n+/, ''), '');
+    L.push(`## ${KIND_NAME[p.kind || 'build']} (${p.mode === 'ai' ? 'AI-written' : 'template'})${p.ideaId === '_route' ? '' : `: ${i ? i.title : p.ideaId}`}`, '', p.text.replace(/^# .*\n+/, ''), '');
   });
   L.push('## Your answers', '');
   route(a).forEach((s) => {
