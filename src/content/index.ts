@@ -5,9 +5,15 @@ import ht from './health-team';
 import cc from './creator-commerce';
 import hp from './home-physical';
 import lt from './legal-travel';
+import ai from './ai';
+import ag from './agri';
+import jb from './jobs';
+import rp from './property';
+import tp from './transport';
+import so from './social';
 import { allDomains } from './shared';
 
-const all: Domain[] = [...gd, ...em, ...ht, ...cc, ...hp, ...lt];
+const all: Domain[] = [...gd, ...em, ...ht, ...cc, ...hp, ...lt, ...ai, ...ag, ...jb, ...rp, ...tp, ...so];
 /** Domains in the order of the region question's options. */
 export const domains: Domain[] = allDomains.map((n) => {
   const d = all.find((x) => x.name === n);

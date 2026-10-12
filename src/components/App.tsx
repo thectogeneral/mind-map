@@ -1,11 +1,12 @@
 'use client';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowLeft, ArrowRight, Check, Cpu, Copy, Pencil, Shuffle, Sparkles, Wand2 } from 'lucide-react';
+import { ArrowLeft, ArrowRight, Check, Cpu, Copy, Network, Pencil, Shuffle, Sparkles, Wand2 } from 'lucide-react';
 import Logo from './Logo';
 import Rail from './Rail';
 import Results from './Results';
+import MapView from './MapView';
 import {
-  Answers, DOMAINS, REGION_Q, answeredCount, answersText, flat, isAns, listOf, optText, picksOf, prune, qOpts, qText, randomAnswers, route,
+  Answers, DEPTHS, DEPTH_ID, Depth, DOMAINS, REGION_Q, answeredCount, answersText, flat, isAns, listOf, optText, picksOf, prune, qOpts, qText, randomAnswers, route, depthAvailable, depthOf, typicalRouteLength, withDepth,
 } from '@/lib/engine';
 import { Result, Idea } from '@/lib/types';
 import { runRules } from '@/lib/rules';
@@ -15,8 +16,9 @@ import { RoutePrompt } from './PromptBox';
 import { Built, reportMD } from '@/lib/report';
 import { copy, download, savePDF } from '@/lib/export';
 
-type Screen = 'start' | 'q' | 'review' | 'mode' | 'run' | 'results';
+type Screen = 'start' | 'q' | 'review' | 'mode' | 'run' | 'results' | 'map';
 const KEY = 'idea-route:v2';
+const hasAnswers = (a: Answers) => Object.keys(a).some((k) => k !== DEPTH_ID);
 const slug = (s: string) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 40) || 'idea';
 
 export default function App() {
@@ -28,6 +30,8 @@ export default function App() {
   const [prompts, setPrompts] = useState<Built[]>([]);
   const [saved, setSaved] = useState<boolean>(false);
   const [rolled, setRolled] = useState(false);
+  const [pickDepth, setPickDepth] = useState<Depth>('standard');
+  const [mapFrom, setMapFrom] = useState<Screen>('start');
   const [apiKey, setApiKey] = useState('');
   const [status, setStatus] = useState<Record<string, string>>({});
   const [error, setError] = useState('');
@@ -46,11 +50,11 @@ export default function App() {
     setMounted(true);
     try {
       const t = localStorage.getItem(KEY);
-      if (t) { const d = JSON.parse(t); if (d?.ans && Object.keys(d.ans).length) { setAns(d.ans); setCur(d.cur || 'y.skill'); setResult(d.result || null); setPrompts(d.prompts || []); setSaved(true); } }
+      if (t) { const d = JSON.parse(t); if (d?.ans && hasAnswers(d.ans)) { setAns(d.ans); setCur(d.cur || 'y.skill'); setResult(d.result || null); setPrompts(d.prompts || []); setSaved(true); } }
     } catch { /* storage may be unavailable */ }
   }, []);
   useEffect(() => {
-    if (!mounted || !Object.keys(ans).length) return;
+    if (!mounted || !hasAnswers(ans)) return;
     const h = setTimeout(() => { try { localStorage.setItem(KEY, JSON.stringify({ ans, cur, result, prompts })); } catch { /* ignore */ } }, 300);
     return () => clearTimeout(h);
   }, [ans, cur, result, prompts, mounted]);
@@ -63,6 +67,13 @@ export default function App() {
   const here = idx >= 0 ? f[idx] : f[0];
 
   const go = useCallback((s: Screen) => { setScreen(s); if (typeof window !== 'undefined') window.scrollTo(0, 0); setTimeout(() => stageRef.current?.focus({ preventScroll: true }), 30); }, []);
+
+  const questionsCopy = () => {
+    const r5 = (n: number) => Math.round(n / 5) * 5;
+    const lo = r5(typicalRouteLength('quick')), hi = r5(typicalRouteLength('deep'));
+    return lo >= hi ? `About ${lo} questions, one route` : `About ${lo} to ${hi} questions, one route`;
+  };
+  const openMap = () => { if (screen !== 'map') setMapFrom(screen); go('map'); };
 
   /* answering */
   const toggle = (id: string, max: number, opt: string) => {
@@ -93,6 +104,14 @@ export default function App() {
     const q = s.qs.find((x) => !isAns(ans, x.id)) || s.qs[0];
     setCur(q.id); go('q');
   };
+  const deeper = () => {
+    const d = depthOf(ans);
+    const next = DEPTHS[Math.min(DEPTHS.indexOf(d) + 1, DEPTHS.length - 1)];
+    const a2 = withDepth(ans, next);
+    const q = flat(route(a2)).find((x) => !isAns(a2, x.q.id));
+    setAns(a2);
+    if (q) { setCur(q.q.id); go('q'); }
+  };
   const edit = (id: string) => { setCur(id); go('q'); };
 
   /* randomize: fill a route at random and go straight to ideas (rule-based, no key needed) */
@@ -100,7 +119,7 @@ export default function App() {
   const randomize = (keep = false) => {
     setError('');
     try {
-      const a = randomAnswers(Math.random, keep ? ans : {});
+      const a = randomAnswers(Math.random, keep ? ans : withDepth({}, pickDepth));
       const r = runRules(a);
       setAns(a); setCur('y.skill'); setResult(r); setPrompts([]); setRolled(true); go('results');
     } catch (e) { setError((e as Error).message); }
@@ -168,6 +187,7 @@ export default function App() {
             <span className="font-display text-lg font-semibold tracking-tight">Mind<span className="text-accent">Map</span></span>
           </button>
           <div className="flex items-center gap-3">
+            <button className="btn-outline !h-9 !px-3" onClick={openMap} aria-current={screen === 'map' ? 'page' : undefined}><Network className="h-4 w-4" /><span className="hidden sm:inline">Map</span></button>
             {screen !== 'start' && <span className="eyebrow hidden sm:inline">{done} of {total} answered</span>}
             {screen === 'q' && <button className="btn-outline !h-9 !px-3" onClick={() => go('review')}>Review</button>}
             {result && screen !== 'results' && <button className="btn-outline !h-9 !px-3" onClick={() => go('results')}>Ideas</button>}
@@ -189,19 +209,34 @@ export default function App() {
                 <p className="mt-6 text-lg md:text-xl text-muted-foreground max-w-xl text-balance">
                   Answer about yourself, choose a region and the questions branch to fit it. Then get ideas found in your answers, a test for each, and a prompt that builds it.
                 </p>
+                {depthAvailable && (
+                  <div className="mt-8" role="group" aria-label="How deep to go">
+                    <div className="eyebrow mb-2">How deep?</div>
+                    <div className="flex flex-wrap gap-2">
+                      {DEPTHS.map((d) => (
+                        <button key={d} type="button" aria-pressed={pickDepth === d} onClick={() => setPickDepth(d)}
+                          className={`text-left px-4 py-2 border border-foreground rounded-sm ${pickDepth === d ? 'bg-accent text-accent-foreground' : 'bg-card hover:bg-secondary'}`}>
+                          <span className="block font-display font-bold capitalize">{d}</span>
+                          <span className="block text-xs opacity-80">about {typicalRouteLength(d)} questions</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
                 <div className="mt-8 flex flex-wrap gap-4">
-                  <button className="btn-brutal h-12 px-6" onClick={() => { setAns({}); setResult(null); setPrompts([]); setCur('y.skill'); go('q'); }}>Start the route<ArrowRight className="h-4 w-4" /></button>
+                  <button className="btn-brutal h-12 px-6" onClick={() => { setAns(withDepth({}, pickDepth)); setResult(null); setPrompts([]); setCur('y.skill'); go('q'); }}>Start the route<ArrowRight className="h-4 w-4" /></button>
                   <button className="btn-outline h-12 px-6" onClick={() => randomize()}><Shuffle className="h-4 w-4" />Randomize</button>
+                  <button className="btn-outline h-12 px-6" onClick={openMap}><Network className="h-4 w-4" />See the whole map</button>
                   {saved && <button className="btn-outline h-12 px-6" onClick={() => go(result ? 'results' : 'q')}>Resume where you left off</button>}
                 </div>
                 <ul className="mt-8 flex flex-wrap gap-x-8 gap-y-3 text-sm text-muted-foreground">
-                  {['About 50 to 90 questions, one route', 'Rule-based or AI finder', 'Download PDF or Markdown'].map((t) => <li key={t} className="flex items-center gap-2"><Check className="h-4 w-4 text-accent" />{t}</li>)}
+                  {[questionsCopy(), 'Rule-based or AI finder', 'Download PDF or Markdown'].map((t) => <li key={t} className="flex items-center gap-2"><Check className="h-4 w-4 text-accent" />{t}</li>)}
                 </ul>
               </div>
               <div className="lg:col-span-5 relative">
                 <div className="absolute -inset-4 bg-accent/20 rounded-sm rotate-2" />
                 <div className="relative border border-foreground rounded-sm bg-card p-5">
-                  <div className="eyebrow mb-3">12 regions</div>
+                  <div className="eyebrow mb-3">{DOMAINS.length} regions</div>
                   <div className="flex flex-wrap gap-2">{DOMAINS.map((d, i) => <span key={d.id} className={`tag ${i % 3 === 0 ? 'bg-primary text-primary-foreground' : i % 3 === 1 ? 'bg-accent text-accent-foreground' : ''}`}>{d.name.replace(/\s*\(.*\)/, '')}</span>)}</div>
                 </div>
               </div>
@@ -209,7 +244,7 @@ export default function App() {
 
             <div className="mt-16 grid md:grid-cols-3 gap-6">
               {[
-                ['01', 'Choose a region', 'Pick one or two of twelve regions. Each opens its own corners, so a Games route never asks about invoices.'],
+                ['01', 'Choose a region', `Pick one or two of ${DOMAINS.length} regions. Each opens its own corners, so a Games route never asks about invoices.`],
                 ['02', 'Get narrower', 'Every answer changes the next question and its options. Pick the features you want, many at a time.'],
                 ['03', 'Find, test, build', 'Rules or AI find the ideas, say where to look, and write a build prompt for a coding agent.'],
               ].map(([n, t, d]) => (
@@ -267,6 +302,7 @@ export default function App() {
               <div className="mt-6 flex flex-wrap gap-3">
                 <button className="btn-brutal" disabled={done < 12 || !chosen.length} onClick={() => go('mode')}>Find my ideas<ArrowRight className="h-4 w-4" /></button>
                 <button className="btn-outline" onClick={() => go('q')}>Back to questions</button>
+                {depthAvailable && depthOf(ans) !== 'deep' && <button className="btn-outline" onClick={deeper}>Go deeper: more questions</button>}
                 {result && <button className="btn-outline" onClick={() => go('results')}>See last ideas</button>}
               </div>
               {!chosen.length && <p className="mt-3 text-sm text-destructive">Choose at least one region first.</p>}
@@ -325,6 +361,10 @@ export default function App() {
               </div>
             )}
           </div>
+        )}
+
+        {screen === 'map' && (
+          <MapView answers={ans} curStationId={here && Object.keys(ans).length ? here.s.id : null} onBack={() => go(mapFrom === 'map' ? 'start' : mapFrom)} />
         )}
 
         {screen === 'results' && result && (

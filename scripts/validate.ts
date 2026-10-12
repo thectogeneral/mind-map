@@ -11,7 +11,7 @@ const REQUIRED: Record<string, string[]> = {
 };
 const MIN_Q: Record<string, number> = { people: 5, shape: 5, system: 4, growth: 4, edge: 3 };
 
-export function validateDomains(domains: Domain[], shared: Question[] = []) {
+export function validateDomains(domains: Domain[], shared: Question[] = [], strict = false) {
   const errs: string[] = [];
   const ids = new Set<string>(shared.map((q) => q.id));
   const checkQ = (q: Question, where: string, earlier: Set<string>) => {
@@ -27,6 +27,18 @@ export function validateDomains(domains: Domain[], shared: Question[] = []) {
       if (!earlier.has(c.id)) errs.push(`${q.id} ${tag} refers to ${c.id}, which is not an earlier question`);
       if (!c.has.length) errs.push(`${q.id} ${tag} has empty has[]`);
     };
+    if (q.depth && q.depth !== 'standard' && q.depth !== 'deep') errs.push(`${q.id} bad depth ${q.depth}`);
+    (q.drops || []).forEach((x) => {
+      cond(x, 'drops');
+      const pool = new Set([...q.o, ...(q.adds || []).flatMap((a) => a.o)]);
+      x.o.forEach((o) => { if (!pool.has(o)) errs.push(`${q.id} drops "${o}", which is not one of its options`); });
+      if (!x.o.length) errs.push(`${q.id} drops has empty o[]`);
+    });
+    if (q.drops?.length) {
+      const all = new Set(q.drops.flatMap((x) => x.o));
+      const left = [...q.o, ...(q.adds || []).flatMap((a) => a.o)].filter((o) => !all.has(o)).length;
+      if (left < 5) errs.push(`${q.id} would keep only ${left} options if every drop applied (needs 5+)`);
+    }
     if (q.when) cond(q.when, 'when');
     (q.adds || []).forEach((a) => { cond(a, 'adds'); if (a.o.length < 3) errs.push(`${q.id} adds needs 3+ options`); const dup = a.o.filter((x) => q.o.includes(x)); if (dup.length) errs.push(`${q.id} adds repeats ${dup[0]}`); });
   };
@@ -43,6 +55,10 @@ export function validateDomains(domains: Domain[], shared: Question[] = []) {
     };
     if (q.when) chk(q.when);
     (q.adds || []).forEach(chk);
+    (q.drops || []).forEach(chk);
+    // a question can only depend on a trigger that is shown at the same or a shallower depth
+    const rank = (x?: string) => (x === 'deep' ? 2 : x === 'standard' ? 1 : 0);
+    [q.when, ...(q.adds || []), ...(q.drops || [])].forEach((c) => { const t = c && byId.get(c.id); if (t && rank(t.depth) > rank(q.depth)) errs.push(`${q.id} depends on ${t.id}, which is shown only at a deeper level`); });
   };
   domains.forEach((d) => {
     [d.fork, ...Object.values(d.branches).flat(), ...d.districts.flatMap((x) => x.qs)].forEach(hasCheck);
@@ -57,21 +73,35 @@ export function validateDomains(domains: Domain[], shared: Question[] = []) {
     if (d.fork.o.length < 12) errs.push(`${d.name} needs 12 corners, has ${d.fork.o.length}`);
     // Corner questions are only seen one corner at a time, so each corner sees fork + its own earlier questions.
     Object.entries(d.branches).forEach(([n, qs]) => {
-      if (qs.length !== 4) errs.push(`${d.name}/${n} needs 4 questions`);
       const keys = qs.map((q) => q.k).join(',');
-      if (keys !== 'corner_a,corner_b,features,angle') errs.push(`${d.name}/${n} keys must be corner_a,corner_b,features,angle (got ${keys})`);
+      const core = 'corner_a,corner_b,features,angle';
+      if (keys !== core && keys !== core + ',corner_e,corner_f,corner_g') errs.push(`${d.name}/${n} keys must be ${core} or ${core},corner_e,corner_f,corner_g (got ${keys})`);
       const save = new Set(earlier);
       qs.forEach((q) => { checkQ(q, d.name + '/' + n, earlier); earlier.add(q.id); });
       earlier.clear(); save.forEach((x) => earlier.add(x));
     });
-    // after corners, make every corner question id visible to districts (they cannot condition on them reliably, so do not)
+    // district questions may react to corner answers: a corner question is only answered if that corner was picked
+    Object.values(d.branches).flat().forEach((q) => earlier.add(q.id));
     d.districts.forEach((x) => {
       if (x.qs.length < (MIN_Q[x.id] || 3)) errs.push(`${d.name}/${x.id} needs ${MIN_Q[x.id]}+ questions, has ${x.qs.length}`);
       const keys = x.qs.map((q) => q.k);
       (REQUIRED[x.id] || []).forEach((k) => { if (!keys.includes(k)) errs.push(`${d.name}/${x.id} is missing key "${k}"`); });
       x.qs.forEach((q) => here(q, d.name + '/' + x.id));
     });
-    const wc = d.districts.flatMap((x) => x.qs).filter((q) => q.when || q.adds).length;
+    const dq = d.districts.flatMap((x) => x.qs);
+    const wc = dq.filter((q) => q.when || q.adds).length;
+    const cornerIds = new Set(Object.values(d.branches).flat().map((q) => q.id));
+    const extended = Object.values(d.branches).every((qs) => qs.length === 7);
+    if (strict && !extended) errs.push(`${d.name} is not fully extended: every corner needs 7 questions (${Object.entries(d.branches).filter(([, qs]) => qs.length !== 7).map(([n]) => n).join(', ')})`);
+    if (extended) {
+      const linked = dq.filter((q) => [q.when, ...(q.adds || []), ...(q.drops || [])].some((c) => c && cornerIds.has(c.id))).length;
+      if (linked < 8) errs.push(`${d.name} needs 8+ district questions that react to corner answers, has ${linked}`);
+      const drops = dq.filter((q) => q.drops?.length).length;
+      if (drops < 3) errs.push(`${d.name} needs 3+ district questions using drops, has ${drops}`);
+      const std = dq.filter((q) => q.depth === 'standard').length, deep = dq.filter((q) => q.depth === 'deep').length;
+      if (std < 5 || deep < 5) errs.push(`${d.name} needs 5+ standard and 5+ deep district questions, has ${std} and ${deep}`);
+      Object.entries(d.branches).forEach(([n, qs]) => qs.slice(4).forEach((q) => { if (!(q.when || q.adds || q.drops)) errs.push(`${q.id} (${d.name}/${n}) should react to an earlier corner answer with when, adds or drops`); }));
+    }
     if (wc < 4) errs.push(`${d.name} should use when/adds on at least 4 district questions (has ${wc})`);
     const ids2 = d.p;
     d.fork.id.startsWith(ids2 + '.') || errs.push(`${d.name} ids must start with "${ids2}."`);
@@ -80,7 +110,8 @@ export function validateDomains(domains: Domain[], shared: Question[] = []) {
 }
 
 async function main() {
-  const arg = process.argv[2];
+  const strict = process.argv.includes('--strict');
+  const arg = process.argv.slice(2).find((x) => !x.startsWith('--'));
   let domains: Domain[];
   if (arg) {
     const mod = await import(path.resolve(arg));
@@ -88,10 +119,12 @@ async function main() {
   } else {
     domains = (await import('../src/content/index')).domains;
   }
-  const errs = validateDomains(domains);
+  const errs = validateDomains(domains, [], strict);
   const all = domains.flatMap((d) => [d.fork, ...Object.values(d.branches).flat(), ...d.districts.flatMap((x) => x.qs)]);
   const opts = all.reduce((n, q) => n + q.o.length, 0);
+  const std = all.filter((q) => q.depth === 'standard').length, deep = all.filter((q) => q.depth === 'deep').length;
   if (errs.length) { console.error('VALIDATION FAILED\n' + errs.slice(0, 80).join('\n') + (errs.length > 80 ? `\n...and ${errs.length - 80} more` : '')); process.exit(1); }
   console.log(`ok: ${domains.length} domains, ${all.length} questions, ${opts} options, min options ${Math.min(...all.map((q) => q.o.length))}`);
+  console.log(`depth: ${all.length - std - deep} core, ${std} standard, ${deep} deep`);
 }
 if (process.argv[1] && /validate\.ts$/.test(process.argv[1])) main();

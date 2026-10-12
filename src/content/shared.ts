@@ -24,6 +24,8 @@ export const allDomains = [
   'Games', 'Developer tools', 'Education and learning', 'Money and fintech', 'Health and wellness', 'Team productivity',
   'Creator economy and media', 'Commerce and retail', 'Home, family and community', 'Physical world',
   'Legal, compliance and government', 'Travel, events and local life',
+  'AI and automation', 'Agriculture and food', 'Jobs, careers and work', 'Real estate and property',
+  'Transport and logistics', 'Social and community apps',
 ];
 
 export const regionQs: Question[] = [

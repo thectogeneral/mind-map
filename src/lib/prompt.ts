@@ -6,6 +6,20 @@ const bullets = (a: string[]) => (a.length ? a.map((x) => `- ${x}`).join('\n') :
 const num = (a: string[]) => a.map((x, i) => `${i + 1}. ${x}`).join('\n');
 const STD = new Set(['audience', 'moment', 'platform', 'ai', 'money', 'first_users', 'loop', 'belief', 'kill', 'prior']);
 
+/** The corner this idea came from, with its optional first-session, outside-needs and trust answers. */
+function cornerNotes(c: Ctx, idea: Idea): string[] {
+  const all = c.domains.flatMap((d) => d.corners);
+  const cn = all.find((x) => idea.corner.includes(x.name)) || all[0];
+  if (!cn) return [];
+  return [
+    cn.firstSession.length ? `- First session: ${cn.firstSession.join('; ')}` : '',
+    cn.needs.length ? `- Needs from outside: ${cn.needs.join('; ')}` : '',
+    cn.trust.length ? `- Trust and rules: ${cn.trust.join('; ')}` : '',
+  ].filter(Boolean);
+}
+
+const notesBlock = (c: Ctx, idea: Idea) => cornerNotes(c, idea).map((x) => '\n' + x).join('');
+
 function fields(c: Ctx, idea: Idea) {
   const stack = c.you.stack?.length ? c.you.stack.join(', ') : 'whichever stack is simplest and well documented';
   const mvpN = (c.you.hours?.[0] || '').match(/Under 5|Weekends|Evenings|Irregular|^5 to 10/) ? 3 : 5;
@@ -43,7 +57,7 @@ ${sentence(idea)}
 - Growth loop: ${cap(idea.loop)}
 - Useful on day one with zero other users through: ${lc(idea.alone)}
 - What keeps it fresh without me: ${lc(idea.refill)}
-${idea.angle ? `- What makes it specific: ${idea.angle}` : ''}
+${idea.angle ? `- What makes it specific: ${idea.angle}` : ''}${notesBlock(c, idea)}
 
 ## 4. Platform and stack
 - Platform: ${idea.platform}
@@ -139,7 +153,7 @@ ${sentence(idea)}
 - MVP features: ${mvp.join('; ')}
 - Later: ${later.length ? later.join('; ') : 'nothing yet'}
 - How it earns: ${idea.money}
-- What makes it specific: ${idea.angle || 'not chosen yet'}
+- What makes it specific: ${idea.angle || 'not chosen yet'}${notesBlock(c, idea)}
 - My constraints: ${c.you.hours?.[0] || 'hours not stated'} a week, budget ${c.you.budget?.[0] || 'not stated'}, team ${c.you.team?.join(', ') || 'just me'}
 ${detail ? `- Strongest reason it could fail: ${detail.fails}\n- Cheapest test this week: ${detail.test}` : ''}
 
@@ -187,7 +201,7 @@ ${cap(idea.action)}. A new user should be doing this within 30 seconds of openin
 ${num(screenList(idea, mvp))}
 
 ## 5. Flows
-- First run: open, understand, do the core action, see the result.
+- First run: open, understand, do the core action, see the result.${(() => { const n = cornerNotes(c, idea).find((x) => x.startsWith('- First session')); return n ? ' The builder pictures it like this: ' + n.replace('- First session: ', '') + '.' : ''; })()}
 - Return visit: what the user sees that brings them back (${lc(idea.retention)}).
 - Sharing: how the growth loop shows up in the interface (${lc(idea.loop)}).
 - Useful with zero other users: ${lc(idea.alone)}.
@@ -195,7 +209,7 @@ ${num(screenList(idea, mvp))}
 ## 6. Design direction
 - Tone: plain, confident, friendly. Short copy, no jargon.
 - Layout: ${mobile ? 'mobile first, thumb-reachable primary actions, then a tablet and desktop layout' : 'desktop first with a responsive mobile layout'}.
-${lowBand ? '- Low bandwidth and mid-range Android phones: light imagery, small assets, clear offline and slow-network states.\n' : ''}- Accessibility: WCAG AA contrast, 44px touch targets, visible focus, no information carried by colour alone.
+${lowBand ? '- Low bandwidth and mid-range Android phones: light imagery, small assets, clear offline and slow-network states.\n' : ''}${cornerNotes(c, idea).filter((x) => x.startsWith('- Trust')).map((x) => x.replace('- Trust and rules:', '- Trust and rules the interface must respect:') + '\n').join('')}- Accessibility: WCAG AA contrast, 44px touch targets, visible focus, no information carried by colour alone.
 - Pick one accent colour, one neutral scale and two type sizes of emphasis. Name the choices.
 
 ## 7. Deliverables
@@ -283,7 +297,7 @@ ${sentence(idea)}
 - How it earns: ${idea.money}
 - What makes it specific: ${idea.angle || 'not chosen yet'}
 - MVP features: ${mvp.join('; ') || 'none chosen'}
-- Later features: ${later.length ? later.join('; ') : 'none'}
+- Later features: ${later.length ? later.join('; ') : 'none'}${notesBlock(c, idea)}
 
 ## How the finder scored it
 ${lines.join('\n')}

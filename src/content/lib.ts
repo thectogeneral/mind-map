@@ -12,6 +12,11 @@ export interface Question {
   when?: Cond;
   /** Extra options appended when an earlier answer included one of these options. */
   adds?: (Cond & { o: string[] })[];
+  /** Options removed when an earlier answer included one of these options (applied after `adds`).
+   *  A drop keyed to `y.market` applies only when every market the user chose is listed in `has`. */
+  drops?: (Cond & { o: string[] })[];
+  /** Only shown at this depth or deeper. Absent means core: always shown. */
+  depth?: 'standard' | 'deep';
   /** Crossover question: {A} and {B} are replaced by the two region names. */
   x?: boolean;
 }
@@ -26,21 +31,27 @@ export interface Domain {
   branches: Record<string, Question[]>;
   districts: District[];
 }
-export type Extra = Partial<Pick<Question, 'when' | 'adds' | 'note' | 'noOther'>>;
+export type Extra = Partial<Pick<Question, 'when' | 'adds' | 'drops' | 'depth' | 'note' | 'noOther'>>;
 
 export const O = (s: string): string[] => s.split('|').map((x) => x.trim()).filter(Boolean);
 export const Q = (id: string, k: string, t: string, o: string, max = 1, extra: Extra = {}): Question => ({ id, k, t, o: O(o), max, ...extra });
 
-/** A corner (sub-area) holds four questions, each narrowing the idea further.
- *  a: what the user does, b: what brings them back, c: features (pick many), d: what makes it specific. */
+/** A corner (sub-area) holds four core questions, each narrowing the idea further, and optionally three more.
+ *  a: what the user does, b: what brings them back, c: features (pick many), d: what makes it specific.
+ *  e (standard depth): what the first session looks like. f (deep): what it needs from outside (content, data, partners, hardware).
+ *  g (deep): what the user must trust, or which rules and safety needs apply. */
 type Tup = [string, string, Extra?];
-export function B(prefix: string, i: number, name: string, a: Tup, b: Tup, c: Tup, d: Tup): [string, Question[]] {
-  return [name, [
+export function B(prefix: string, i: number, name: string, a: Tup, b: Tup, c: Tup, d: Tup, e?: Tup, f?: Tup, g?: Tup): [string, Question[]] {
+  const qs = [
     Q(`${prefix}.b${i}.a`, 'corner_a', a[0], a[1], 2, a[2]),
     Q(`${prefix}.b${i}.b`, 'corner_b', b[0], b[1], 3, b[2]),
     Q(`${prefix}.b${i}.c`, 'features', c[0], c[1], 6, c[2]),
     Q(`${prefix}.b${i}.d`, 'angle', d[0], d[1], 2, d[2]),
-  ]];
+  ];
+  if (e) qs.push(Q(`${prefix}.b${i}.e`, 'corner_e', e[0], e[1], 2, { ...e[2], depth: 'standard' }));
+  if (f) qs.push(Q(`${prefix}.b${i}.f`, 'corner_f', f[0], f[1], 3, { ...f[2], depth: 'deep' }));
+  if (g) qs.push(Q(`${prefix}.b${i}.g`, 'corner_g', g[0], g[1], 2, { ...g[2], depth: 'deep' }));
+  return [name, qs];
 }
 
 interface DomainInput {
